@@ -19,17 +19,17 @@ export interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 
 
 // 3. Define the Class
 export class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
-  public id!: string;
-  public name!: string;
-  public email!: string;
-  public password!: string;
-  public role!: 'victim' | 'volunteer';
-  public is_verified!: boolean;
-  public last_location?: any;
+  declare id: string;
+  declare name: string;
+  declare email: string;
+  declare password: string;
+  declare role: 'victim' | 'volunteer';
+  declare is_verified: boolean;
+  declare last_location?: any;
 
   // Timestamps
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 // 4. Initialize the Model Configuration

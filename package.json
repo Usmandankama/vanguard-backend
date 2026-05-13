@@ -27,5 +27,11 @@
     "postgres": "^3.4.9",
     "sequelize": "^6.37.8",
     "uuid": "^14.0.0"
+  },
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "create-volunteers": "bun scripts/create-test-volunteers.ts",
+    "update-locations": "bun scripts/update-volunteer-locations.ts"
   }
 }

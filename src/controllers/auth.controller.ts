@@ -88,7 +88,7 @@ export class AuthController {
           },
           token
         }
-      };
+      };  
     } catch (error) {
       console.error('Signin Error:', error);
       set.status = 500;

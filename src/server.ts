@@ -2,7 +2,9 @@ import { Elysia, t } from 'elysia';
 import { DatabaseService } from "./services/database.service";
 import { initializeDatabaseModels } from "./model";
 import { authRoutes } from "./routes/auth.route";
+import { sosRoutes } from "./routes/sos.route";
 import { WebSocketService } from "./services/websocket.service";
+import { loggingMiddleware } from "./middleware/logging.middleware";
 
 const PORT = parseInt(process.env.PORT || "3000");
 
@@ -18,11 +20,13 @@ async function bootstrap() {
 
     // 3. Construct Elysia Application
     const app = new Elysia()
+      .use(loggingMiddleware)
       .get("/api/health", () => ({
         status: "VanguardNet Core ALIVE",
         timestamp: new Date(),
       }))
       .use(authRoutes)
+      .use(sosRoutes)
 
       // 3. The WebSocket Gateway
       .ws("/ws/vanguard", {
@@ -46,6 +50,7 @@ async function bootstrap() {
 
     console.log(`\n🟢 VanguardNet running at http://localhost:${PORT}`);
     console.log(`🔑 Auth Gateway Ready`);
+    console.log(`🚨 SOS Gateway Ready`);
   } catch (error) {
     console.error("💥 CRITICAL: Boot Sequence Failed", error);
     process.exit(1);

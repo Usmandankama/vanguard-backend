@@ -48,8 +48,11 @@ export class SOSController {
 
       // --- NEW WEBSOCKET DISPATCH LOGIC ---
       
+      // Handle case where no volunteers are found or query fails
+      const volunteers = nearbyVolunteers || [];
+      
       // Extract just the IDs of the nearby volunteers
-      const volunteerIds = nearbyVolunteers.map((v: any) => v.id);
+      const volunteerIds = volunteers.map((v: any) => v.id);
 
       // 1. Dispatch full details strictly to the verified volunteers
       WebSocketService.dispatchToVolunteers(volunteerIds, {
@@ -72,8 +75,8 @@ export class SOSController {
         success: true,
         data: {
           alert,
-          dispatched_to: nearbyVolunteers.length,
-          message: `SOS broadcasted to ${nearbyVolunteers.length} nearby volunteers.`
+          dispatched_to: volunteers.length,
+          message: `SOS broadcasted to ${volunteers.length} nearby volunteers.`
         }
       };
 

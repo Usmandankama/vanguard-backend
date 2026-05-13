@@ -20,18 +20,18 @@ export interface SOSAlertCreationAttributes extends Optional<SOSAlertAttributes,
 
 // 3. Define the Class
 export class SOSAlert extends Model<SOSAlertAttributes, SOSAlertCreationAttributes> implements SOSAlertAttributes {
-  public id!: string;
-  public victim_id!: string;
-  public responder_id!: string | null;
-  public type!: 'medical' | 'fire' | 'crime' | 'accident';
-  public description!: string;
-  public metadata!: any;
-  public location!: any;
-  public status!: 'pending' | 'responding' | 'resolved' | 'cancelled';
+  declare id: string;
+  declare victim_id: string;
+  declare responder_id: string | null;
+  declare type: 'medical' | 'fire' | 'crime' | 'accident';
+  declare description: string;
+  declare metadata: any;
+  declare location: any;
+  declare status: 'pending' | 'responding' | 'resolved' | 'cancelled';
 
   // Timestamps
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 // 4. Initialize the Model Configuration
