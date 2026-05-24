@@ -2,26 +2,39 @@ import { DatabaseService } from '../services/database.service';
 import { QueryTypes } from 'sequelize';
 
 export class LocationUtils {
-  
+
   /**
-   * Calculate distance between two points using Haversine formula (Local Math)
+   * Haversine formula — straight-line distance between two coordinates.
+   * Used for response-time calculations and distance display.
+   * For spatial filtering, always use PostGIS ST_DWithin instead —
+   * it uses a proper spheroid and is index-accelerated.
    */
-  static calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+  static calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ): number {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
       Math.cos(φ1) * Math.cos(φ2) *
       Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // Distance in meters
+    return R * c;
   }
 
   /**
-   * Find nearby volunteers using PostGIS
+   * Find nearby VERIFIED volunteers using PostGIS.
+   *
+   * Fix: added `is_verified = true` filter. Previously this was enforced in
+   * SOSController's inline query but missing here, meaning any code path that
+   * called LocationUtils directly (e.g. future scheduled re-dispatch) could
+   * return unverified volunteers. The two code paths now agree.
    */
   static async findNearbyVolunteers(
     latitude: number,
@@ -30,31 +43,32 @@ export class LocationUtils {
     limit: number = 20
   ) {
     try {
-      const sequelize = DatabaseService.getPrimary(); // <-- V2 Architecture fix
+      const sequelize = DatabaseService.getPrimary();
       const query = `
-        SELECT 
-          id, 
+        SELECT
+          id,
           name,
-          ST_X(last_location::geometry) as longitude,
-          ST_Y(last_location::geometry) as latitude,
+          ST_X(last_location::geometry)  AS longitude,
+          ST_Y(last_location::geometry)  AS latitude,
           ST_Distance(
             last_location::geography,
             ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
-          ) as distance
-         FROM users 
-         WHERE role = 'volunteer' -- Fixed 'type' to 'role' to match our V2 schema
-         AND last_location IS NOT NULL
-         AND ST_DWithin(
-           last_location::geography,
-           ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-           :radiusMeters
-         )
-         ORDER BY distance
-         LIMIT :limit
+          ) AS distance
+        FROM users
+        WHERE role = 'volunteer'
+          AND is_verified = true
+          AND last_location IS NOT NULL
+          AND ST_DWithin(
+            last_location::geography,
+            ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+            :radiusMeters
+          )
+        ORDER BY distance
+        LIMIT :limit
       `;
 
       const results = await sequelize.query(query, {
-        replacements: { longitude, latitude, radiusMeters, limit }, // Using safer named parameters
+        replacements: { longitude, latitude, radiusMeters, limit },
         type: QueryTypes.SELECT
       });
 
@@ -74,7 +88,8 @@ export class LocationUtils {
   }
 
   /**
-   * Find nearby SOS alerts for a volunteer
+   * Find nearby active SOS alerts for a volunteer's feed.
+   * Returns alerts in 'pending' or 'responding' status within radius.
    */
   static async findNearbySOSAlerts(
     latitude: number,
@@ -84,33 +99,31 @@ export class LocationUtils {
   ) {
     try {
       const sequelize = DatabaseService.getPrimary();
-      
-      // FIXED: Safely interacts with true PostGIS geometry instead of raw JSON
       const query = `
-        SELECT 
+        SELECT
           sa.id,
           sa.victim_id,
           sa.type,
           sa.description,
           sa.status,
-          ST_X(sa.location::geometry) as longitude,
-          ST_Y(sa.location::geometry) as latitude,
           sa."createdAt",
-          u.name as victim_name,
+          ST_X(sa.location::geometry) AS longitude,
+          ST_Y(sa.location::geometry) AS latitude,
+          u.name AS victim_name,
           ST_Distance(
             sa.location::geography,
             ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
-          ) as distance
-         FROM sos_alerts sa
-         LEFT JOIN users u ON sa.victim_id = u.id
-         WHERE sa.status IN ('pending', 'responding')
-         AND ST_DWithin(
-           sa.location::geography,
-           ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-           :radiusMeters
-         )
-         ORDER BY distance, sa."createdAt" DESC
-         LIMIT :limit
+          ) AS distance
+        FROM sos_alerts sa
+        LEFT JOIN users u ON sa.victim_id = u.id
+        WHERE sa.status IN ('pending', 'responding')
+          AND ST_DWithin(
+            sa.location::geography,
+            ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+            :radiusMeters
+          )
+        ORDER BY distance, sa."createdAt" DESC
+        LIMIT :limit
       `;
 
       const results = await sequelize.query(query, {
@@ -120,17 +133,18 @@ export class LocationUtils {
 
       return results.map((alert: any) => ({
         id: alert.id,
-        victimId: alert.victim_id,
-        victimName: alert.victim_name,
+        victim_id: alert.victim_id,
+        victim_name: alert.victim_name,
         type: alert.type,
         description: alert.description,
         status: alert.status,
         distance: parseFloat(alert.distance),
         location: {
           latitude: parseFloat(alert.latitude),
-          longitude: parseFloat(alert.longitude)
+          longitude: parseFloat(alert.longitude),
+          timestamp: alert.createdAt
         },
-        createdAt: alert.createdAt
+        created_at: alert.createdAt
       }));
     } catch (error) {
       console.error('Error finding nearby SOS alerts:', error);
@@ -139,15 +153,20 @@ export class LocationUtils {
   }
 
   /**
-   * Update user location in PostGIS format
+   * Persist a user's live location to PostGIS.
+   * Called on every location update from the Flutter app.
    */
-  static async updateUserLocation(userId: string, latitude: number, longitude: number): Promise<void> {
+  static async updateUserLocation(
+    userId: string,
+    latitude: number,
+    longitude: number
+  ): Promise<void> {
     try {
       const sequelize = DatabaseService.getPrimary();
       await sequelize.query(
-        `UPDATE users 
-         SET last_location = ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326), 
-             "updatedAt" = NOW() 
+        `UPDATE users
+         SET last_location = ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326),
+             "updatedAt" = NOW()
          WHERE id = :userId`,
         {
           replacements: { longitude, latitude, userId },
@@ -161,17 +180,17 @@ export class LocationUtils {
   }
 
   /**
-   * Get user location from PostGIS
+   * Read a user's last known location from PostGIS.
    */
   static async getUserLocation(userId: string) {
     try {
       const sequelize = DatabaseService.getPrimary();
       const result = await sequelize.query(
-        `SELECT 
-          ST_X(last_location::geometry) as longitude,
-          ST_Y(last_location::geometry) as latitude,
-          "updatedAt"
-         FROM users 
+        `SELECT
+           ST_X(last_location::geometry) AS longitude,
+           ST_Y(last_location::geometry) AS latitude,
+           "updatedAt"
+         FROM users
          WHERE id = :userId AND last_location IS NOT NULL`,
         {
           replacements: { userId },
@@ -181,11 +200,11 @@ export class LocationUtils {
 
       if (result.length === 0) return null;
 
-      const location = result[0] as any;
+      const loc = result[0] as any;
       return {
-        latitude: parseFloat(location.latitude),
-        longitude: parseFloat(location.longitude),
-        timestamp: location.updatedAt
+        latitude: parseFloat(loc.latitude),
+        longitude: parseFloat(loc.longitude),
+        timestamp: loc.updatedAt
       };
     } catch (error) {
       console.error('Error getting user location:', error);
@@ -193,15 +212,25 @@ export class LocationUtils {
     }
   }
 
+  /**
+   * Validate that coordinates are within legal geographic bounds.
+   * Call this before every PostGIS query — passing NaN or out-of-range
+   * values to ST_MakePoint does not throw; it silently returns bad geometry.
+   */
   static validateCoordinates(latitude: number, longitude: number): boolean {
     return (
-      latitude >= -90 && latitude <= 90 &&
-      longitude >= -180 && longitude <= 180 &&
-      !isNaN(latitude) && !isNaN(longitude)
+      !isNaN(latitude) &&
+      !isNaN(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180
     );
   }
 
   static formatDistance(meters: number): string {
-    return meters < 1000 ? `${Math.round(meters)}m` : `${(meters / 1000).toFixed(1)}km`;
+    return meters < 1000
+      ? `${Math.round(meters)}m`
+      : `${(meters / 1000).toFixed(1)}km`;
   }
 }
