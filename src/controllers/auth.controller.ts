@@ -1,38 +1,45 @@
 import { User } from '../model/users/users.model';
-import jwt from 'jsonwebtoken';
+import { signJwt } from '../utils/jwt.utils';
 import bcrypt from 'bcryptjs';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'vanguard_super_secret_dev_key';
+import { Sequelize } from 'sequelize';
 
 export class AuthController {
   static async signup({ body, set }: any) {
     try {
-      const { name, email, password, role } = body;
+      const { name, email, password, role, latitude, longitude } = body;
 
-      // 1. Check for existing user
       const existingUser = await User.findOne({ where: { email } });
       if (existingUser) {
         set.status = 400;
         return { success: false, error: 'User with this email already exists' };
       }
 
-      // 2. Hash Password safely
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // 3. Create User (is_verified defaults to false automatically)
+      // Build last_location only if coords were provided
+      const locationData = (latitude != null && longitude != null)
+        ? {
+            last_location: Sequelize.fn(
+              'ST_SetSRID',
+              Sequelize.fn('ST_MakePoint', longitude, latitude),
+              4326
+            )
+          }
+        : {};
+
       const user = await User.create({
         name,
         email,
         password: hashedPassword,
-        role
+        role,
+        ...locationData,
       });
 
-      // 4. Generate JWT
-      const token = jwt.sign(
-        { userId: user.id, role: user.role, is_verified: user.is_verified },
-        JWT_SECRET,
-        { expiresIn: '30d' } // 30 days for mobile app convenience
-      );
+      const token = signJwt({
+        userId: user.id,
+        role: user.role,
+        is_verified: user.is_verified,
+      });
 
       return {
         success: true,
@@ -42,10 +49,10 @@ export class AuthController {
             name: user.name,
             email: user.email,
             role: user.role,
-            is_verified: user.is_verified
+            is_verified: user.is_verified,
           },
-          token
-        }
+          token,
+        },
       };
     } catch (error) {
       console.error('Signup Error:', error);
@@ -54,6 +61,7 @@ export class AuthController {
     }
   }
 
+  // signin unchanged
   static async signin({ body, set }: any) {
     try {
       const { email, password } = body;
@@ -70,11 +78,11 @@ export class AuthController {
         return { success: false, error: 'Invalid credentials' };
       }
 
-      const token = jwt.sign(
-        { userId: user.id, role: user.role, is_verified: user.is_verified },
-        JWT_SECRET,
-        { expiresIn: '30d' }
-      );
+      const token = signJwt({
+        userId: user.id,
+        role: user.role,
+        is_verified: user.is_verified,
+      });
 
       return {
         success: true,
@@ -84,11 +92,11 @@ export class AuthController {
             name: user.name,
             email: user.email,
             role: user.role,
-            is_verified: user.is_verified
+            is_verified: user.is_verified,
           },
-          token
-        }
-      };  
+          token,
+        },
+      };
     } catch (error) {
       console.error('Signin Error:', error);
       set.status = 500;
